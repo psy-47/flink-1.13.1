@@ -55,6 +55,7 @@ import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.FlinkException;
 
 import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,6 +77,7 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -855,7 +857,9 @@ public class CliFrontend {
      * Gets the JAR file from the path.
      *
      * @param jarFilePath The path of JAR file
+     *
      * @return The JAR file
+     *
      * @throws FileNotFoundException The JAR file does not exist.
      */
     private File getJarFile(String jarFilePath) throws FileNotFoundException {
@@ -877,6 +881,7 @@ public class CliFrontend {
      * Displays an exception message for incorrect command line arguments.
      *
      * @param e The exception to display.
+     *
      * @return The return code for the process.
      */
     private static int handleArgException(CliArgsException e) {
@@ -892,6 +897,7 @@ public class CliFrontend {
      * Displays an optional exception message for incorrect program parametrization.
      *
      * @param e The exception to display.
+     *
      * @return The return code for the process.
      */
     private static int handleParametrizationException(ProgramParametrizationException e) {
@@ -917,6 +923,7 @@ public class CliFrontend {
      * Displays an exception message.
      *
      * @param t The exception to display.
+     *
      * @return The return code for the process.
      */
     private static int handleError(Throwable t) {
@@ -973,6 +980,7 @@ public class CliFrontend {
      * @param commandLine containing the parsed command line options
      * @param clusterAction the cluster action to run against the retrieved {@link ClusterClient}.
      * @param <ClusterID> type of the cluster id
+     *
      * @throws FlinkException if something goes wrong
      */
     private <ClusterID> void runClusterAction(
@@ -996,9 +1004,9 @@ public class CliFrontend {
         }
 
         try (final ClusterDescriptor<ClusterID> clusterDescriptor =
-                clusterClientFactory.createClusterDescriptor(effectiveConfiguration)) {
+                     clusterClientFactory.createClusterDescriptor(effectiveConfiguration)) {
             try (final ClusterClient<ClusterID> clusterClient =
-                    clusterDescriptor.retrieve(clusterId).getClusterClient()) {
+                         clusterDescriptor.retrieve(clusterId).getClusterClient()) {
                 clusterAction.runAction(clusterClient);
             }
         }
@@ -1017,6 +1025,7 @@ public class CliFrontend {
          * Run the cluster action with the given {@link ClusterClient}.
          *
          * @param clusterClient to run the cluster action against
+         *
          * @throws FlinkException if something goes wrong
          */
         void runAction(ClusterClient<ClusterID> clusterClient) throws FlinkException;
@@ -1030,6 +1039,7 @@ public class CliFrontend {
      * Parses the command line arguments and starts the requested action.
      *
      * @param args command line arguments of the client.
+     *
      * @return The return code of the program
      */
     public int parseAndRun(String[] args) {
@@ -1120,6 +1130,7 @@ public class CliFrontend {
         final Configuration configuration =
                 GlobalConfiguration.loadConfiguration(configurationDirectory);
 
+
         // 3. load the custom command lines
         final List<CustomCommandLine> customCommandLines =
                 loadCustomCommandLines(configuration, configurationDirectory);
@@ -1127,8 +1138,10 @@ public class CliFrontend {
         int retCode = 31;
         try {
             final CliFrontend cli = new CliFrontend(configuration, customCommandLines);
-
-            SecurityUtils.install(new SecurityConfiguration(cli.configuration));
+//            SecurityUtils.install(new SecurityConfiguration(cli.configuration));
+            // 根据命令行参数[-D、-yD]优化 flink-conf.yml 中配置信息
+            SecurityUtils.install(new SecurityConfiguration(cli.compatCommandLineSecurityConfiguration(
+                    args)));
             retCode = SecurityUtils.getInstalledContext().runSecured(() -> cli.parseAndRun(args));
         } catch (Throwable t) {
             final Throwable strippedThrowable =
@@ -1227,6 +1240,7 @@ public class CliFrontend {
      * Gets the custom command-line for the arguments.
      *
      * @param commandLine The input to the command-line.
+     *
      * @return custom command-line which is active (may only be one at a time)
      */
     public CustomCommandLine validateAndGetActiveCommandLine(CommandLine commandLine) {
@@ -1263,5 +1277,48 @@ public class CliFrontend {
         Constructor<? extends CustomCommandLine> constructor = customCliClass.getConstructor(types);
 
         return constructor.newInstance(params);
+    }
+
+    /**
+     * 兼容命令行【-D、-yD】安全认证设置配置
+     *
+     * @param args
+     *
+     * @return 变更后的
+     */
+    public Configuration compatCommandLineSecurityConfiguration(String[] args) {
+        // 自定义参数解析Options
+        Options securityOptions = new Options()
+                .addOption(Option.builder("D")
+                        .argName("property=value")
+                        .numberOfArgs(2)
+                        .valueSeparator('=')
+                        .desc("Allows specifying multiple generic configuration options.")
+                        .build());
+
+        // 解析命令行传入的参数
+//        CommandLine commandLine =
+//                new CliFrontendParser.ExtendedGnuParser(true)
+//                        .parse(securityOptions, args);
+        try {
+            CommandLine commandLine = CliFrontendParser.parse(securityOptions, args, true);
+
+            // 从配置文件中读取的参数。
+            Configuration securityConfiguration = new Configuration(this.configuration);
+
+            // 用命令行传入参数替换掉配置文件中的security参数
+            Properties dynamicProperties = commandLine.getOptionProperties("D");
+            for (Map.Entry<Object, Object> entry : dynamicProperties.entrySet()) {
+                securityConfiguration.setString(
+                        entry.getKey().toString(),
+                        entry.getValue().toString()
+                );
+            }
+
+            return securityConfiguration;
+        } catch (CliArgsException e) {
+            LOG.warn("解析命令行参数[-D、-yD]失败，替换 flink-conf.yml 中配置失败。", e);
+        }
+        return this.configuration;
     }
 }

@@ -18,6 +18,8 @@
 
 package org.apache.flink.client.cli;
 
+import org.apache.commons.cli.GnuParser;
+
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
 
@@ -32,6 +34,7 @@ import javax.annotation.Nullable;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.stream.Collectors;
 
 /**
@@ -623,5 +626,19 @@ public class CliFrontendParser {
         }
 
         return resultOptions;
+    }
+
+    public static class ExtendedGnuParser extends GnuParser {
+        private final boolean ignoreUnrecognizedOption;
+        public ExtendedGnuParser(boolean ignoreUnrecognizedOption) {
+            // GnuParser、DefaultParser在遇到未定义的参数时都会抛出异常，这里是为了进行兼容
+            this.ignoreUnrecognizedOption = ignoreUnrecognizedOption;
+        }
+        protected void processOption(String arg, ListIterator<String> iter) throws ParseException {
+            boolean hasOption = this.getOptions().hasOption(arg);
+            if (hasOption || !this.ignoreUnrecognizedOption) {
+                super.processOption(arg, iter);
+            }
+        }
     }
 }
