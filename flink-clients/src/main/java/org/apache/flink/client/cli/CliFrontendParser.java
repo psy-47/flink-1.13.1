@@ -18,8 +18,6 @@
 
 package org.apache.flink.client.cli;
 
-import org.apache.commons.cli.GnuParser;
-
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
 
@@ -34,7 +32,6 @@ import javax.annotation.Nullable;
 
 import java.util.Collection;
 import java.util.List;
-import java.util.ListIterator;
 import java.util.stream.Collectors;
 
 /**
@@ -90,7 +87,7 @@ public class CliFrontendParser {
 
     /**
      * @deprecated use non-prefixed variant {@link #DETACHED_OPTION} for both YARN and non-YARN
-     *     deployments
+     *         deployments
      */
     @Deprecated
     public static final Option YARN_DETACHED_OPTION =
@@ -559,7 +556,7 @@ public class CliFrontendParser {
      *
      * @param formatter The formatter to use for printing
      * @param runOptions True if the run options should be printed, False to print only general
-     *     options
+     *         options
      */
     private static void printCustomCliOptions(
             Collection<CustomCommandLine> customCommandLines,
@@ -609,6 +606,7 @@ public class CliFrontendParser {
      *
      * @param optionsA options to merge, can be null if none
      * @param optionsB options to merge, can be null if none
+     *
      * @return
      */
     public static Options mergeOptions(@Nullable Options optionsA, @Nullable Options optionsB) {
@@ -626,19 +624,5 @@ public class CliFrontendParser {
         }
 
         return resultOptions;
-    }
-
-    public static class ExtendedGnuParser extends GnuParser {
-        private final boolean ignoreUnrecognizedOption;
-        public ExtendedGnuParser(boolean ignoreUnrecognizedOption) {
-            // GnuParser、DefaultParser在遇到未定义的参数时都会抛出异常，这里是为了进行兼容
-            this.ignoreUnrecognizedOption = ignoreUnrecognizedOption;
-        }
-        protected void processOption(String arg, ListIterator<String> iter) throws ParseException {
-            boolean hasOption = this.getOptions().hasOption(arg);
-            if (hasOption || !this.ignoreUnrecognizedOption) {
-                super.processOption(arg, iter);
-            }
-        }
     }
 }

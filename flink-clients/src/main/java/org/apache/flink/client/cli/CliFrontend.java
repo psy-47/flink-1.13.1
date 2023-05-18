@@ -55,7 +55,6 @@ import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.FlinkException;
 
 import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -222,6 +221,9 @@ public class CliFrontend {
      */
     protected void run(String[] args) throws Exception {
         LOG.info("Running 'run' command.");
+
+        Configuration configuration = this.compatCommandLineSecurityConfiguration(args);
+
 
         final Options commandOptions = CliFrontendParser.getRunCommandOptions();
         final CommandLine commandLine = getCommandLine(commandOptions, args, true);
@@ -1139,9 +1141,8 @@ public class CliFrontend {
         try {
             final CliFrontend cli = new CliFrontend(configuration, customCommandLines);
 //            SecurityUtils.install(new SecurityConfiguration(cli.configuration));
-            // 根据命令行参数[-D、-yD]优化 flink-conf.yml 中配置信息
-            SecurityUtils.install(new SecurityConfiguration(cli.compatCommandLineSecurityConfiguration(
-                    args)));
+            // 根据命令行参数[-D]优化 flink-conf.yml 中配置信息
+            SecurityUtils.install(new SecurityConfiguration(cli.compatCommandLineSecurityConfiguration(args)));
             retCode = SecurityUtils.getInstalledContext().runSecured(() -> cli.parseAndRun(args));
         } catch (Throwable t) {
             final Throwable strippedThrowable =
@@ -1280,44 +1281,33 @@ public class CliFrontend {
     }
 
     /**
-     * 兼容命令行【-D、-yD】安全认证设置配置
+     * 兼容命令行【-D】安全认证设置配置
      *
-     * @param args
+     * @param args 参数
      *
      * @return 变更后的
      */
     public Configuration compatCommandLineSecurityConfiguration(String[] args) {
-        // 自定义参数解析Options
-        Options securityOptions = new Options()
-                .addOption(Option.builder("D")
-                        .argName("property=value")
-                        .numberOfArgs(2)
-                        .valueSeparator('=')
-                        .desc("Allows specifying multiple generic configuration options.")
-                        .build());
-
-        // 解析命令行传入的参数
-//        CommandLine commandLine =
-//                new CliFrontendParser.ExtendedGnuParser(true)
-//                        .parse(securityOptions, args);
         try {
-            CommandLine commandLine = CliFrontendParser.parse(securityOptions, args, true);
+            // copy Flink配置文件。
+            Configuration dynamicConfiguration = this.getConfiguration();
 
-            // 从配置文件中读取的参数。
-            Configuration securityConfiguration = new Configuration(this.configuration);
+            // 解析命令行入参，重点在 this.customCommandLineOptions 定义
+            final Options commandOptions = CliFrontendParser.getRunCommandOptions();
+            final CommandLine commandLine = getCommandLine(commandOptions, args, true);
 
-            // 用命令行传入参数替换掉配置文件中的security参数
-            Properties dynamicProperties = commandLine.getOptionProperties("D");
+            // 用命令行传入参数替换掉配置文件中的参数
+            Properties dynamicProperties = commandLine.getOptionProperties(DynamicPropertiesUtil.DYNAMIC_PROPERTIES.getOpt());
             for (Map.Entry<Object, Object> entry : dynamicProperties.entrySet()) {
-                securityConfiguration.setString(
+                dynamicConfiguration.setString(
                         entry.getKey().toString(),
                         entry.getValue().toString()
                 );
             }
 
-            return securityConfiguration;
+            return dynamicConfiguration;
         } catch (CliArgsException e) {
-            LOG.warn("解析命令行参数[-D、-yD]失败，替换 flink-conf.yml 中配置失败。", e);
+            LOG.warn("解析命令行参数[-D]失败，替换 flink-conf.yml 中配置失败。", e);
         }
         return this.configuration;
     }
